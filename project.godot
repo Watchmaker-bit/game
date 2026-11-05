@@ -1,0 +1,35 @@
+config_version=5
+
+[application]
+
+config/name="3D Modeling Trainer"
+config/description="Учебная песочница по sculpt-кистям Blender на Godot 4.7"
+run/main_scene="res://scenes/main.tscn"
+config/features=PackedStringArray("4.7", "GL Compatibility")
+config/icon="res://icon.svg"
+
+[autoload]
+
+BrushManager="*res://scripts/brush_manager.gd"
+QuestManager="*res://scripts/quest_manager.gd"
+
+[display]
+
+window/size/viewport_width=1280
+window/size/viewport_height=800
+window/size/window_width_override=1280
+window/size/window_height_override=800
+window/stretch/mode="canvas_items"
+window/stretch/aspect="expand"
+
+[physics]
+
+3d/physics_engine="Jolt Physics"
+
+[rendering]
+
+rendering_device/driver.windows="d3d12"
+renderer/rendering_method="gl_compatibility"
+renderer/rendering_method.mobile="gl_compatibility"
+anti_aliasing/quality/msaa_3d=2
+environment/defaults/default_clear_color=Color(0.055, 0.06, 0.075, 1)
