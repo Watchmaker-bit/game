@@ -40,7 +40,7 @@ const BRUSH_HINTS := {
 }
 
 var _syncing := false
-var _total := 11
+var _total := 14
 var _progress_segments: Array[ColorRect] = []
 var _brush_buttons: Dictionary = {}
 
@@ -55,7 +55,6 @@ var _quests_button: Button
 
 var _eyebrow: Label
 var _quest_title: Label
-var _quest_description: Label
 var _setup_label: Label
 var _task_label: Label
 var _hint_panel: PanelContainer
@@ -175,9 +174,12 @@ func _build_top_bar() -> PanelContainer:
 	segments.add_theme_constant_override("separation", 4)
 	progress_box.add_child(segments)
 	_progress_segments.clear()
+	var segment_width := 20
+	if _total > 12:
+		segment_width = 12
 	for i in _total:
 		var seg := ColorRect.new()
-		seg.custom_minimum_size = Vector2(20, 5)
+		seg.custom_minimum_size = Vector2(segment_width, 5)
 		seg.color = BORDER_SOFT
 		segments.add_child(seg)
 		_progress_segments.append(seg)
@@ -314,11 +316,6 @@ func _build_quest_panel() -> PanelContainer:
 	_quest_title.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	col.add_child(_quest_title)
 
-	_quest_description = _label("", 13, Color(0.75, 0.77, 0.82, 1.0))
-	_quest_description.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_quest_description.add_theme_constant_override("line_spacing", 4)
-	col.add_child(_quest_description)
-
 	var setup_panel := _make_info_block("НАСТРОЙКА", MUTED, BORDER_SOFT)
 	col.add_child(setup_panel)
 	_setup_label = setup_panel.get_meta("value_label") as Label
@@ -391,7 +388,7 @@ func _build_quest_overlay(root: Control) -> void:
 	_quest_overlay.add_child(center)
 
 	var panel := PanelContainer.new()
-	panel.custom_minimum_size = Vector2(720, 648)
+	panel.custom_minimum_size = Vector2(720, 600)
 	panel.add_theme_stylebox_override(
 		"panel",
 		_box(BG_PANEL, BORDER, 12, 1, 24, 20)
@@ -435,14 +432,6 @@ func _build_quest_overlay(root: Control) -> void:
 	_quest_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_quest_list.add_theme_constant_override("separation", 6)
 	scroll.add_child(_quest_list)
-
-	var footer := _label(
-		"Квесты открываются по порядку. Пройденные можно повторять в любой момент.",
-		11,
-		MUTED
-	)
-	footer.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	col.add_child(footer)
 
 
 func _separator() -> HSeparator:
@@ -628,11 +617,15 @@ func _on_direction_selected(index: int) -> void:
 
 
 ## Синхронизация панели с BrushManager без повторной эмиссии сигналов.
+## Кнопки ещё не изученных кистей скрыты: палитра растёт постепенно.
 func set_brush_state(brush: String, radius: float, strength: float, direction: String) -> void:
 	_syncing = true
+	var available := QuestManager.unlocked_brushes()
 	for brush_id in _brush_buttons.keys():
 		var btn := _brush_buttons[brush_id] as Button
-		btn.set_pressed_no_signal(str(brush_id) == brush)
+		var is_available := available.has(str(brush_id))
+		btn.visible = is_available
+		btn.set_pressed_no_signal(is_available and str(brush_id) == brush)
 	_radius_slider.value = radius
 	_strength_slider.value = strength
 	_radius_value.text = "%d px" % roundi(radius)
@@ -670,7 +663,6 @@ func show_quest(
 		_eyebrow.text += " · " + BrushManager.title_of(brush_id)
 	_eyebrow.add_theme_color_override("font_color", ACCENT)
 	_quest_title.text = str(quest.get("title", ""))
-	_quest_description.text = str(quest.get("description", ""))
 	_setup_label.text = str(quest.get("setup", ""))
 	_task_label.text = str(quest.get("task", ""))
 	_hint_label.text = str(quest.get("hint", ""))
@@ -687,13 +679,9 @@ func show_final(completed_count: int) -> void:
 	_eyebrow.text = "КУРС ПРОЙДЕН"
 	_eyebrow.add_theme_color_override("font_color", OK)
 	_quest_title.text = "Все квесты пройдены!"
-	_quest_description.text = (
-		"Ты освоил навигацию, шесть sculpt-кистей и контрольные работы. "
-		+ "Теперь можно лепить собственную модель."
-	)
 	_setup_label.text = "Все кисти и настройки открыты."
-	_task_label.text = "Свободная практика: собери модель любыми кистями."
-	_hint_label.text = "Открой «Квесты» в верхней панели, чтобы повторить любой квест."
+	_task_label.text = "Свободная практика любыми кистями."
+	_hint_label.text = "Выбери любой квест в меню, чтобы повторить."
 	_update_progress(_total, completed_count)
 
 
@@ -767,7 +755,6 @@ func _rebuild_quest_list() -> void:
 				header.add_theme_constant_override("separation", 1)
 				var header_title := _label(str(section.title), 12, ACCENT)
 				header.add_child(header_title)
-				header.add_child(_label(str(section.subtitle), 11, MUTED))
 				_quest_list.add_child(header)
 			_quest_list.add_child(_make_quest_row(i, quest))
 
@@ -779,7 +766,6 @@ func _rebuild_quest_list() -> void:
 func _make_quest_row(index: int, quest: Dictionary) -> Button:
 	var done := QuestManager.is_quest_completed(index)
 	var is_current := index == QuestManager.current_index and not QuestManager.is_all_completed()
-	var unlocked := QuestManager.is_unlocked(index)
 	var brush_id := str(quest.get("brush", ""))
 
 	var mark := "·"
@@ -790,33 +776,24 @@ func _make_quest_row(index: int, quest: Dictionary) -> Button:
 	elif is_current:
 		mark = "▶"
 		status = "  ·  сейчас"
-	elif not unlocked:
-		mark = "·"
-		status = "  ·  закрыт"
 
 	var row := Button.new()
 	row.text = "%s  %02d.  %s%s" % [mark, index + 1, str(quest.get("title", "")), status]
 	row.alignment = HORIZONTAL_ALIGNMENT_LEFT
 	row.custom_minimum_size = Vector2(0, 42)
 	row.add_theme_font_size_override("font_size", 14)
-	row.disabled = not unlocked
-	row.tooltip_text = str(quest.get("description", ""))
 	if not brush_id.is_empty():
-		row.tooltip_text += "\nКисть: " + BrushManager.title_of(brush_id)
+		row.tooltip_text = "Кисть: " + BrushManager.title_of(brush_id)
 	row.add_theme_stylebox_override("normal", _quest_row_box(done, is_current, false))
 	row.add_theme_stylebox_override("hover", _quest_row_box(done, is_current, true))
 	row.add_theme_stylebox_override("pressed", _quest_row_box(done, is_current, true))
-	row.add_theme_stylebox_override("disabled", _quest_row_box(done, false, false))
 	if done:
 		row.add_theme_color_override("font_color", Color(0.72, 0.92, 0.8, 1.0))
 	elif is_current:
 		row.add_theme_color_override("font_color", Color(1.0, 0.83, 0.6, 1.0))
-	elif not unlocked:
-		row.add_theme_color_override("font_color", Color(0.4, 0.42, 0.48, 1.0))
 	else:
 		row.add_theme_color_override("font_color", TEXT)
 	row.add_theme_color_override("font_hover_color", Color(1, 1, 1, 1))
-	row.add_theme_color_override("font_disabled_color", Color(0.4, 0.42, 0.48, 1.0))
 	row.pressed.connect(_on_quest_row_pressed.bind(index))
 	return row
 

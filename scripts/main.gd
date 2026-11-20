@@ -22,13 +22,14 @@ var _cursor_material: ShaderMaterial
 var _orbit_pixels := 0.0
 var _zoom_steps := 0
 var _strokes := 0
+var _radius_changes := 0
+var _strength_changes := 0
 var _used_brushes: Dictionary = {}
 
 
 func _ready() -> void:
 	_setup_environment()
 	_setup_lights()
-	_build_grid()
 	_build_brush_cursor()
 
 	hud.brush_selected.connect(_on_brush_selected)
@@ -54,54 +55,49 @@ func _setup_environment() -> void:
 	env.background_mode = Environment.BG_COLOR
 	env.background_color = Color(0.052, 0.058, 0.072, 1.0)
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-	env.ambient_light_color = Color(0.36, 0.42, 0.54, 1.0)
-	env.ambient_light_energy = 0.55
+	env.ambient_light_color = Color(0.6, 0.6, 0.62, 1.0)
+	env.ambient_light_energy = 0.45
+	env.tonemap_mode = Environment.TONE_MAPPER_FILMIC
 	$WorldEnvironment.environment = env
 
 
 func _setup_lights() -> void:
-	$KeyLight.rotation_degrees = Vector3(-52, -35, 0)
-	$KeyLight.light_color = Color(1.0, 0.94, 0.87, 1.0)
-	$KeyLight.light_energy = 1.5
+	# Основной и заполняющий свет вращаются вместе с камерой, поэтому
+	# видимая сторона освещена ровно и без пересвета.
+	$KeyLight.light_color = Color(1.0, 0.97, 0.94, 1.0)
+	$KeyLight.light_energy = 0.9
 	$KeyLight.shadow_enabled = true
 	$KeyLight.directional_shadow_max_distance = 12.0
 
-	$FillLight.rotation_degrees = Vector3(-18, 140, 0)
-	$FillLight.light_color = Color(0.55, 0.68, 1.0, 1.0)
-	$FillLight.light_energy = 0.55
+	$FillLight.light_color = Color(0.82, 0.85, 0.92, 1.0)
+	$FillLight.light_energy = 0.12
 
-	$RimLight.position = Vector3(2.0, 1.4, -1.8)
-	$RimLight.light_color = Color(1.0, 0.55, 0.24, 1.0)
-	$RimLight.light_energy = 1.1
-	$RimLight.omni_range = 4.5
+	_update_camera_light()
 
 
-func _build_grid() -> void:
-	var grid_mesh := ImmediateMesh.new()
-	var mat := StandardMaterial3D.new()
-	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	mat.vertex_color_use_as_albedo = true
-	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
-	grid_mesh.surface_begin(Mesh.PRIMITIVE_LINES, mat)
-
-	for i in range(-8, 9):
-		var v := float(i) * 0.5
-		var color := Color(0.32, 0.37, 0.46, 0.2)
-		if i == 0:
-			color = Color(0.56, 0.62, 0.75, 0.34)
-		_add_grid_line(grid_mesh, Vector3(-4, 0, v), Vector3(4, 0, v), color)
-		_add_grid_line(grid_mesh, Vector3(v, 0, -4), Vector3(v, 0, 4), color)
-
-	grid_mesh.surface_end()
-	$Grid.mesh = grid_mesh
-
-
-func _add_grid_line(grid: ImmediateMesh, a: Vector3, b: Vector3, color: Color) -> void:
-	grid.surface_set_color(color)
-	grid.surface_add_vertex(a)
-	grid.surface_set_color(color)
-	grid.surface_add_vertex(b)
+## Свет всегда падает со стороны камеры. Небольшой наклон и слабый
+## заполняющий свет оставляют объём, не выжигая одну сторону.
+func _update_camera_light() -> void:
+	var camera := cam_rig.camera
+	if camera == null:
+		return
+	var cam_basis := camera.global_transform.basis
+	var key_tilt := (
+		Basis(Vector3.UP, deg_to_rad(34.0))
+		* Basis(Vector3.RIGHT, deg_to_rad(-24.0))
+	)
+	$KeyLight.global_transform = Transform3D(
+		cam_basis * key_tilt,
+		$KeyLight.global_position
+	)
+	var fill_tilt := (
+		Basis(Vector3.UP, deg_to_rad(-28.0))
+		* Basis(Vector3.RIGHT, deg_to_rad(14.0))
+	)
+	$FillLight.global_transform = Transform3D(
+		cam_basis * fill_tilt,
+		$FillLight.global_position
+	)
 
 
 func _build_brush_cursor() -> void:
@@ -137,6 +133,8 @@ func _load_current_quest() -> void:
 	if _current_quest.is_empty():
 		hud.show_final(QuestManager.completed.size())
 		return
+	_ensure_available_brush()
+	_sync_hud()
 	hud.show_quest(
 		_current_quest,
 		QuestManager.current_index,
@@ -147,10 +145,26 @@ func _load_current_quest() -> void:
 		_spread_baseline = _zone_spread(spread_condition)
 
 
+## Держит выбранную кисть в пределах открытых и подсказывает кисть квеста.
+func _ensure_available_brush() -> void:
+	var available := QuestManager.unlocked_brushes()
+	if available.is_empty():
+		return
+	if available.has(BrushManager.brush):
+		return
+	var preferred := str(_current_quest.get("brush", ""))
+	if available.has(preferred):
+		BrushManager.set_brush(preferred)
+	else:
+		BrushManager.set_brush(available[0])
+
+
 func _reset_quest_tracking() -> void:
 	_orbit_pixels = 0.0
 	_zoom_steps = 0
 	_strokes = 0
+	_radius_changes = 0
+	_strength_changes = 0
 	_used_brushes.clear()
 	_spread_baseline = 0.0
 	_spread_sample_timer = 0.0
@@ -176,6 +190,7 @@ func _process(delta: float) -> void:
 		_orbiting = false
 
 	_update_brush_cursor()
+	_update_camera_light()
 	_sample_spread_baseline(delta)
 
 
@@ -355,11 +370,13 @@ func _on_brush_selected(brush: String) -> void:
 
 func _on_radius_changed(value: float) -> void:
 	BrushManager.set_radius(value)
+	_radius_changes += 1
 	hud.clear_result()
 
 
 func _on_strength_changed(value: float) -> void:
 	BrushManager.set_strength(value)
+	_strength_changes += 1
 	hud.clear_result()
 
 
@@ -416,14 +433,14 @@ func _on_check_requested() -> void:
 
 	_advancing = true
 	hud.set_check_enabled(false)
-	var was_new := QuestManager.mark_current_completed()
+	QuestManager.mark_current_completed()
 	hud.refresh_quest_list()
-	await get_tree().create_timer(1.5).timeout
+	await get_tree().create_timer(1.4).timeout
 	_advancing = false
-	if was_new:
-		_load_current_quest()
-	else:
-		hud.set_check_enabled(true)
+	# Каждый квест — отдельное задание: после прохождения возвращаемся
+	# в меню выбора квестов, а не переходим к следующему автоматически.
+	_load_current_quest()
+	hud.open_quest_list()
 
 
 ## Публичная точка входа проверки текущего квеста.
@@ -458,6 +475,16 @@ func _check_actions(quest: Dictionary) -> Array[String]:
 		issues.append("приблизь и отдали сферу колесом мыши.")
 	if actions.has("strokes") and _strokes < int(actions.get("strokes", 0)):
 		issues.append("сделай хотя бы один результативный мазок ЛКМ.")
+	if (
+		actions.has("radius_changes")
+		and _radius_changes < int(actions.get("radius_changes", 0))
+	):
+		issues.append("подвинь ползунок Radius — выбери площадь кисти под форму.")
+	if (
+		actions.has("strength_changes")
+		and _strength_changes < int(actions.get("strength_changes", 0))
+	):
+		issues.append("подвинь ползунок Strength — настрой силу мазка.")
 	return issues
 
 
@@ -542,6 +569,19 @@ func _check_sculpt(quest: Dictionary) -> Array[String]:
 				value = float(stats.get("spread", 0.0))
 			"max_indent":
 				value = float(stats.get("max_indent", 0.0))
+			"max_signed":
+				value = float(stats.get("max_signed", 0.0))
+			"zone_diff":
+				var other_center: Vector3 = condition.get(
+					"zone_center_b", Vector3.ZERO
+				)
+				var other: Dictionary = mesh_node.get_zone_stats(
+					other_center, zone_radius
+				)
+				value = absf(
+					float(stats.get("avg_signed", 0.0))
+					- float(other.get("avg_signed", 0.0))
+				)
 			"spread_reduction":
 				var spread := float(stats.get("spread", 0.0))
 				_spread_baseline = maxf(_spread_baseline, spread)
@@ -600,6 +640,10 @@ func _metric_title(metric: String) -> String:
 			return "разброс"
 		"max_indent":
 			return "глубина впадины"
+		"max_signed":
+			return "высота бугра"
+		"zone_diff":
+			return "разница сторон"
 		"spread_reduction":
 			return "уменьшение разброса"
 		_:

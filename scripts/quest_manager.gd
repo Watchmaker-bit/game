@@ -2,74 +2,74 @@ extends Node
 ## Список квестов и сохранение прогресса (autoload QuestManager).
 ##
 ## Курс разбит на разделы:
-##   basics  — основы навигации (вращение, масштаб, первый штрих);
+##   basics  — камера, настройки кисти и первый штрих;
 ##   brushes — по одной кисти на квест;
-##   control — контрольные, где можно применять пройденные кисти.
+##   control — контрольные по пройденным кистям;
+##   shapes  — сложные формы из нескольких зон.
 ##
 ## У квеста могут быть сразу несколько условий:
 ##   actions        — что пользователь сделал мышью;
 ##   setup_check    — какие настройки кисти должны стоять;
 ##   require_brushes— какими кистями реально сделаны мазки;
 ##   sculpt         — какие изменения должны появиться на меше.
+##
+## Метрики sculpt: avg_signed, avg_length, spread, spread_reduction,
+## max_indent, max_signed, zone_diff.
 
 const PROGRESS_PATH := "user://progress.cfg"
+
+## Кисти открываются постепенно. Draw доступна с самого начала,
+## остальные появляются после прохождения своего урока (или при выборе
+## квеста, которому эта кисть нужна).
+const START_BRUSHES := ["draw"]
+const LESSON_BRUSHES := {
+	"brush_draw": "draw",
+	"brush_smooth": "smooth",
+	"brush_grab": "grab",
+	"brush_clay": "clay_strips",
+	"brush_crease": "crease",
+	"brush_inflate": "inflate",
+}
+const BRUSH_ORDER := ["draw", "smooth", "grab", "clay_strips", "crease", "inflate"]
 
 const SECTIONS := [
 	{
 		"id": "basics",
 		"title": "ОСНОВЫ",
-		"subtitle": "Навигация и первый штрих",
 	},
 	{
 		"id": "brushes",
 		"title": "КИСТИ",
-		"subtitle": "Одна кисть — один квест",
 	},
 	{
 		"id": "control",
 		"title": "КОНТРОЛЬНЫЕ",
-		"subtitle": "Свободная работа пройденными кистями",
+	},
+	{
+		"id": "shapes",
+		"title": "СЛОЖНЫЕ ФОРМЫ",
 	},
 ]
 
 const QUESTS := [
 	# ---------------------------------------------------------------- ОСНОВЫ
 	{
-		"id": "basics_orbit",
+		"id": "basics_intro",
 		"section": "basics",
-		"title": "Вращение сцены",
-		"brush": "",
-		"description": "В Blender сцену вращают средней кнопкой мыши. Это первый навык скульптора: без осмотра модели не понять, где не хватает объёма.",
-		"setup": "СКМ (или ПКМ) + движение мыши",
-		"task": "Покрути сферу и осмотри её с разных сторон.",
-		"hint": "Зажми СКМ и веди мышью. Колесо — масштаб, ЛКМ — лепка.",
-		"actions": {"orbit": 160.0},
-		"success": "Вид освоен — теперь модель можно осматривать как в Blender."
-	},
-	{
-		"id": "basics_zoom",
-		"section": "basics",
-		"title": "Масштаб",
-		"brush": "",
-		"description": "Колесо мыши приближает и отдаляет вид. Масштаб нужен, чтобы лепить мелкие детали и видеть всю модель целиком.",
-		"setup": "Колесо мыши",
-		"task": "Приблизь сферу колесом и верни масштаб обратно.",
-		"hint": "Один щелчок колеса — один шаг масштаба. Приближайся, когда работаешь с мелкими формами.",
-		"actions": {"zoom": 2},
-		"success": "Масштаб освоен — можно работать и с общим силуэтом, и с деталями.",
-	},
-	{
-		"id": "basics_stroke",
-		"section": "basics",
-		"title": "Первый штрих",
+		"title": "Камера, кисть и настройки",
 		"brush": "draw",
-		"description": "ЛКМ — лепить. Draw вытягивает вершины вдоль нормалей и создаёт объём. Это основная кисть любого скульптора.",
-		"setup": "Кисть Draw · ЛКМ по сфере",
-		"task": "Проведи первый мазок и создай небольшой бугорок.",
-		"hint": "Зажми ЛКМ и проведи по поверхности. Отпусти кнопку, чтобы закончить штрих.",
-		"actions": {"strokes": 1},
+		"setup": "СКМ/ПКМ — вращение · колесо — масштаб · ЛКМ — Draw",
+		"task": "Покрути сферу, приблизь и отдали её колесом, подвинь Radius и Strength, затем проведи мазок Draw.",
+		"hint": "Radius — площадь мазка: 40–60 для крупных форм, 10–20 для деталей. Strength — сила: 0.3–0.5 для мягкой лепки, 0.7–1.0 для резкой.",
+		"actions": {
+			"orbit": 160.0,
+			"zoom": 2,
+			"strokes": 1,
+			"radius_changes": 1,
+			"strength_changes": 1,
+		},
 		"require_brushes": ["draw"],
-		"success": "Первый штрих готов — кисть слушается.",
+		"success": "Управление, настройки кисти и первый штрих освоены.",
 	},
 	# ---------------------------------------------------------------- КИСТИ
 	{
@@ -77,9 +77,8 @@ const QUESTS := [
 		"section": "brushes",
 		"title": "Draw · объём",
 		"brush": "draw",
-		"description": "Draw — базовая кисть скульптора. Она вытягивает вершины вдоль нормалей (или выбранной оси) и строит основной объём модели.",
 		"setup": "Кисть Draw · Radius 30 · Strength 0.50 · Direction «По нормали»",
-		"task": "Слепи базовую форму — яйцо или камень. Нарасти макушку несколькими мазками Draw.",
+		"task": "Нарасти макушку несколькими мазками Draw — сделай яйцо или камень.",
 		"hint": "Radius — размер пятна, Strength — сила. Сначала крупные формы, мелкие детали — позже.",
 		"setup_check": {
 			"brush": "draw",
@@ -104,10 +103,9 @@ const QUESTS := [
 		"section": "brushes",
 		"title": "Smooth · ровная поверхность",
 		"brush": "smooth",
-		"description": "Smooth не добавляет объём: он усредняет положение вершин с соседями и убирает локальные перепады. Форма остаётся, но становится мягче.",
 		"setup": "Кисть Smooth · Radius 30 · Strength 0.50",
-		"task": "Сначала сделай бугор Draw, затем сгладь его Smooth до мягкой ровной формы.",
-		"hint": "Несколько коротких проходов Smooth работают лучше одного долгого. Следи, чтобы форма не «поплыла».",
+		"task": "Сначала сделай бугор Draw, затем сгладь его Smooth до мягкой формы.",
+		"hint": "Несколько коротких проходов Smooth работают лучше одного долгого.",
 		"setup_check": {
 			"brush": "smooth",
 			"radius": 30.0,
@@ -131,7 +129,6 @@ const QUESTS := [
 		"section": "brushes",
 		"title": "Grab · вытягивание",
 		"brush": "grab",
-		"description": "Grab хватает область и тянет её за курсором. Объём не добавляется — форма вытягивается. Так делают шею, уши, рога и конечности.",
 		"setup": "Кисть Grab · Radius 35 · Strength 0.60",
 		"task": "Создай заготовку уха: потяни часть сферы кистью Grab в сторону.",
 		"hint": "Зажми ЛКМ на сфере и веди мышь. Чем больше Radius, тем крупнее захваченная область.",
@@ -157,10 +154,9 @@ const QUESTS := [
 		"section": "brushes",
 		"title": "Clay Strips · полосы глины",
 		"brush": "clay_strips",
-		"description": "Clay Strips наращивает объём полосами и уплощает поверхность, как мастихин. Кисть строит плотные массы и плоские плоскости.",
 		"setup": "Кисть Clay Strips · Radius 30 · Strength 0.50",
-		"task": "Нарасти на сфере плоские полосы глины — основу для головы или торса.",
-		"hint": "Веди короткие полосы рядом друг с другом. Кисть любит средний Radius и повторные проходы.",
+		"task": "Нарасти на сфере плоские полосы глины.",
+		"hint": "Веди короткие полосы рядом друг с другом.",
 		"setup_check": {
 			"brush": "clay_strips",
 			"radius": 30.0,
@@ -183,10 +179,9 @@ const QUESTS := [
 		"section": "brushes",
 		"title": "Crease · борозда",
 		"brush": "crease",
-		"description": "Crease вдавливает узкую линию и стягивает края к центру. Так делают швы, складки и резкие детали.",
 		"setup": "Кисть Crease · Radius 15 · Strength 0.60",
 		"task": "Продави узкую борозду на макушке — наметь шов или складку.",
-		"hint": "Маленький Radius делает борозду резкой. Веди по линии, а не крути кисть на месте.",
+		"hint": "Веди по линии, а не крути кисть на месте.",
 		"setup_check": {
 			"brush": "crease",
 			"radius": 15.0,
@@ -210,9 +205,8 @@ const QUESTS := [
 		"section": "brushes",
 		"title": "Inflate · раздувание",
 		"brush": "inflate",
-		"description": "Inflate раздувает поверхность вдоль нормалей. Им добавляют щёки, живот и мягкие округлые массы.",
 		"setup": "Кисть Inflate · Radius 30 · Strength 0.50",
-		"task": "Раздуй сферу в округлый объём — заготовку головы или туловища.",
+		"task": "Раздуй сферу в округлый объём.",
 		"hint": "Inflate похож на Draw, но сильнее раздувает. Проходи по форме несколько раз.",
 		"setup_check": {
 			"brush": "inflate",
@@ -237,10 +231,9 @@ const QUESTS := [
 		"section": "control",
 		"title": "Контрольная · Draw + Smooth",
 		"brush": "",
-		"description": "Проверка двух базовых кистей. Draw создаёт форму, Smooth доводит поверхность до аккуратного вида.",
 		"setup": "Свободные настройки · нужны Draw и Smooth",
 		"task": "Слепи гладкий камень: нарасти форму Draw и выровняй её Smooth.",
-		"hint": "Сначала набери объём Draw, потом пройди Smooth. Проверка смотрит и на форму, и на уменьшение разброса.",
+		"hint": "Сначала набери объём Draw, потом пройди Smooth.",
 		"require_brushes": ["draw", "smooth"],
 		"sculpt": [
 			{
@@ -258,10 +251,9 @@ const QUESTS := [
 		"section": "control",
 		"title": "Финальная модель · все кисти",
 		"brush": "",
-		"description": "Свободная работа всеми изученными кистями. Собери базовую голову: объём, вытянутые детали, складки и мягкие массы.",
 		"setup": "Любые настройки · нужны все 6 кистей",
-		"task": "Слепи базовую модель: Draw и Clay — объём, Inflate — округлость, Grab — вытяни деталь, Crease — шов, Smooth — финиш.",
-		"hint": "Кисти можно менять в любой момент. Проверка засчитает только те, которыми ты реально сделал мазок.",
+		"task": "Слепи модель всеми кистями: объём, округлость, вытянутая деталь, шов и финиш Smooth.",
+		"hint": "Проверка засчитает только те кисти, которыми ты реально сделал мазок.",
 		"require_brushes": ["draw", "smooth", "grab", "clay_strips", "crease", "inflate"],
 		"sculpt": [
 			{
@@ -273,6 +265,189 @@ const QUESTS := [
 			},
 		],
 		"success": "Финальная модель готова — все шесть кистей в деле.",
+	},
+	# ---------------------------------------------------------------- СЛОЖНЫЕ ФОРМЫ
+	{
+		"id": "shape_horns",
+		"section": "shapes",
+		"title": "Пара рогов",
+		"brush": "draw",
+		"setup": "Кисть Draw · Radius 15 · Strength 0.70 · По нормали",
+		"task": "Вытяни два рога по бокам макушки.",
+		"hint": "Мелкий Radius делает рог тонким. Вращай сцену, чтобы добраться до обеих сторон.",
+		"setup_check": {
+			"brush": "draw",
+			"radius": 15.0,
+			"strength": 0.7,
+			"tolerance": {"radius": 1.5, "strength": 0.06},
+		},
+		"require_brushes": ["draw"],
+		"sculpt": [
+			{
+				"metric": "avg_signed",
+				"zone_center": Vector3(-0.6, 0.8, 0),
+				"zone_radius": 0.3,
+				"min": 0.007,
+				"message": "вытяни левый рог — слева от макушки мало объёма.",
+			},
+			{
+				"metric": "avg_signed",
+				"zone_center": Vector3(0.6, 0.8, 0),
+				"zone_radius": 0.3,
+				"min": 0.007,
+				"message": "вытяни правый рог — справа от макушки мало объёма.",
+			},
+		],
+		"success": "Оба рога готовы.",
+	},
+	{
+		"id": "shape_ears",
+		"section": "shapes",
+		"title": "Уши · две стороны",
+		"brush": "grab",
+		"setup": "Кисть Grab · Radius 30 · Strength 0.60",
+		"task": "Оттяни два уха по бокам головы.",
+		"hint": "Разверни модель и потяни сначала одну сторону, потом другую.",
+		"setup_check": {
+			"brush": "grab",
+			"radius": 30.0,
+			"strength": 0.6,
+			"tolerance": {"radius": 2.0, "strength": 0.06},
+		},
+		"require_brushes": ["grab"],
+		"sculpt": [
+			{
+				"metric": "avg_length",
+				"zone_center": Vector3(-1, 0.1, 0),
+				"zone_radius": 0.35,
+				"min": 0.05,
+				"message": "оттяни левое ухо — сбоку нет вытянутой формы.",
+			},
+			{
+				"metric": "avg_length",
+				"zone_center": Vector3(1, 0.1, 0),
+				"zone_radius": 0.35,
+				"min": 0.05,
+				"message": "оттяни правое ухо — сбоку нет вытянутой формы.",
+			},
+		],
+		"success": "Оба уха вытянуты: Grab работает на любой стороне.",
+	},
+	{
+		"id": "shape_face",
+		"section": "shapes",
+		"title": "Лицо · нос и глазницы",
+		"brush": "",
+		"setup": "Draw для носа · Crease для глазниц",
+		"task": "Слепи нос и продави две глазницы по бокам от него.",
+		"hint": "Нос — несколькими мазками Draw. Глазницы — короткими Crease с небольшим Radius.",
+		"require_brushes": ["draw", "crease"],
+		"sculpt": [
+			{
+				"metric": "avg_signed",
+				"zone_center": Vector3(0, 0.05, 1),
+				"zone_radius": 0.28,
+				"min": 0.012,
+				"message": "нарасти нос по центру лица.",
+			},
+			{
+				"metric": "max_indent",
+				"zone_center": Vector3(-0.34, 0.22, 0.91),
+				"zone_radius": 0.2,
+				"min": 0.015,
+				"message": "продави левую глазницу кистью Crease.",
+			},
+			{
+				"metric": "max_indent",
+				"zone_center": Vector3(0.34, 0.22, 0.91),
+				"zone_radius": 0.2,
+				"min": 0.015,
+				"message": "продави правую глазницу кистью Crease.",
+			},
+		],
+		"success": "Лицо намечено: нос и глазницы на месте.",
+	},
+	{
+		"id": "shape_balance",
+		"section": "shapes",
+		"title": "Симметричные бугры",
+		"brush": "draw",
+		"setup": "Кисть Draw · Radius 25 · Strength 0.60",
+		"task": "Сделай два одинаковых бугра слева и справа от макушки.",
+		"hint": "Следи за размером: разница между сторонами должна быть минимальной.",
+		"setup_check": {
+			"brush": "draw",
+			"radius": 25.0,
+			"strength": 0.6,
+			"tolerance": {"radius": 1.5, "strength": 0.06},
+		},
+		"require_brushes": ["draw"],
+		"sculpt": [
+			{
+				"metric": "avg_signed",
+				"zone_center": Vector3(-0.45, 0.55, 0.7),
+				"zone_radius": 0.28,
+				"min": 0.010,
+				"message": "нарасти левый бугор.",
+			},
+			{
+				"metric": "avg_signed",
+				"zone_center": Vector3(0.45, 0.55, 0.7),
+				"zone_radius": 0.28,
+				"min": 0.010,
+				"message": "нарасти правый бугор.",
+			},
+			{
+				"metric": "zone_diff",
+				"zone_center": Vector3(-0.45, 0.55, 0.7),
+				"zone_center_b": Vector3(0.45, 0.55, 0.7),
+				"zone_radius": 0.28,
+				"max": 0.010,
+				"message": "бугры разной высоты — подровняй стороны Draw.",
+			},
+		],
+		"success": "Симметрия выдержана.",
+	},
+	{
+		"id": "shape_mask",
+		"section": "shapes",
+		"title": "Маска · полный рельеф",
+		"brush": "",
+		"setup": "Все кисти · любые настройки",
+		"task": "Собери маску: нос, надбровная складка, ухо и гладкая щека.",
+		"hint": "Сначала крупные массы, затем детали. Финиш — Smooth по щеке.",
+		"require_brushes": ["draw", "smooth", "grab", "clay_strips", "crease", "inflate"],
+		"sculpt": [
+			{
+				"metric": "avg_signed",
+				"zone_center": Vector3(0, 0.1, 1),
+				"zone_radius": 0.26,
+				"min": 0.012,
+				"message": "нарасти нос.",
+			},
+			{
+				"metric": "max_indent",
+				"zone_center": Vector3(0, 0.5, 0.86),
+				"zone_radius": 0.22,
+				"min": 0.015,
+				"message": "продави надбровную складку Crease.",
+			},
+			{
+				"metric": "avg_length",
+				"zone_center": Vector3(1, 0.1, 0),
+				"zone_radius": 0.35,
+				"min": 0.04,
+				"message": "оттяни ухо кистью Grab.",
+			},
+			{
+				"metric": "spread_reduction",
+				"zone_center": Vector3(0.6, 0.2, 0.78),
+				"zone_radius": 0.3,
+				"min": 0.10,
+				"message": "сделай щёку объёмной и выровняй её Smooth.",
+			},
+		],
+		"success": "Маска готова: объём, детали и ровная поверхность.",
 	},
 ]
 
@@ -321,12 +496,33 @@ func is_all_completed() -> bool:
 
 
 func is_unlocked(index: int) -> bool:
-	if index < 0 or index >= QUESTS.size():
-		return false
-	return index <= first_uncompleted()
+	return index >= 0 and index < QUESTS.size()
 
 
-## Выбор квеста из списка. Открыты пройденные и первый непройденный.
+## Все кисти, доступные игроку сейчас:
+## стартовые, изученные на пройденных уроках и нужные текущему квесту.
+func unlocked_brushes() -> Array[String]:
+	var available: Array[String] = []
+	for brush_id in START_BRUSHES:
+		available.append(str(brush_id))
+	for lesson_id in LESSON_BRUSHES:
+		var brush_id := str(LESSON_BRUSHES[lesson_id])
+		if completed.has(str(lesson_id)) and not available.has(brush_id):
+			available.append(brush_id)
+	var required: Variant = get_current_quest().get("require_brushes", [])
+	if required is Array:
+		for raw in required:
+			var brush_id := str(raw)
+			if not available.has(brush_id):
+				available.append(brush_id)
+	var ordered: Array[String] = []
+	for brush_id in BRUSH_ORDER:
+		if available.has(brush_id):
+			ordered.append(brush_id)
+	return ordered
+
+
+## Выбор квеста из списка. Все квесты открыты с самого начала.
 func select_quest(index: int) -> bool:
 	if not is_unlocked(index):
 		return false
@@ -360,13 +556,6 @@ func section_title(section_id: String) -> String:
 	for section in SECTIONS:
 		if str(section.id) == section_id:
 			return str(section.title)
-	return ""
-
-
-func section_subtitle(section_id: String) -> String:
-	for section in SECTIONS:
-		if str(section.id) == section_id:
-			return str(section.subtitle)
 	return ""
 
 

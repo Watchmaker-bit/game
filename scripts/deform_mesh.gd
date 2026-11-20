@@ -30,6 +30,7 @@ const BRUSH_CREASE := "crease"
 const BRUSH_INFLATE := "inflate"
 const DIR_PLUS_Z := "plus_z"
 const DIR_MINUS_Z := "minus_z"
+const FLAT_SHADER := preload("res://shaders/sculpt_flat.gdshader")
 
 const MAX_OFFSET := 0.4          # предел суммарного смещения вершины
 const DRAW_STEP := 0.014         # шаг Draw за один вызов
@@ -98,7 +99,7 @@ func _initialize_from_mesh() -> void:
 	_group_normals = _base_group_normals.duplicate()
 
 	if material_override == null:
-		material_override = _make_clay_material()
+		material_override = _make_sculpt_material()
 
 	_mesh = ArrayMesh.new()
 	_arrays[Mesh.ARRAY_VERTEX] = _vertices
@@ -110,14 +111,9 @@ func _initialize_from_mesh() -> void:
 	mesh = _mesh
 
 
-func _make_clay_material() -> StandardMaterial3D:
-	var mat := StandardMaterial3D.new()
-	mat.albedo_color = Color(0.63, 0.48, 0.38, 1.0)
-	mat.roughness = 0.72
-	mat.metallic = 0.03
-	mat.rim_enabled = true
-	mat.rim = 0.25
-	mat.rim_tint = 0.4
+func _make_sculpt_material() -> ShaderMaterial:
+	var mat := ShaderMaterial.new()
+	mat.shader = FLAT_SHADER
 	return mat
 
 
@@ -382,6 +378,7 @@ func get_zone_stats(center: Vector3, radius: float) -> Dictionary:
 	var sum_sq := 0.0
 	var sum_len := 0.0
 	var max_indent := 0.0
+	var max_signed := 0.0
 
 	for g in _group_vertices.size():
 		var rep := _group_rep[g]
@@ -394,6 +391,7 @@ func get_zone_stats(center: Vector3, radius: float) -> Dictionary:
 		sum_sq += signed * signed
 		sum_len += delta.length()
 		max_indent = maxf(max_indent, -signed)
+		max_signed = maxf(max_signed, signed)
 
 	if count == 0:
 		return {
@@ -402,6 +400,7 @@ func get_zone_stats(center: Vector3, radius: float) -> Dictionary:
 			"spread": 0.0,
 			"avg_length": 0.0,
 			"max_indent": 0.0,
+			"max_signed": 0.0,
 		}
 
 	var mean := sum_signed / float(count)
@@ -412,4 +411,5 @@ func get_zone_stats(center: Vector3, radius: float) -> Dictionary:
 		"spread": sqrt(variance),
 		"avg_length": sum_len / float(count),
 		"max_indent": max_indent,
+		"max_signed": max_signed,
 	}

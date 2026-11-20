@@ -24,8 +24,10 @@ func _ready() -> void:
 
 func orbit_relative(relative: Vector2) -> void:
 	_target_yaw -= relative.x * orbit_sensitivity
+	# Вертикаль инвертирована: курсор вверх опускает камеру, и модель
+	# визуально уезжает вниз (курсор вниз — камера поднимается).
 	_target_pitch = clampf(
-		_target_pitch - relative.y * orbit_sensitivity,
+		_target_pitch + relative.y * orbit_sensitivity,
 		-0.45,
 		1.25
 	)
